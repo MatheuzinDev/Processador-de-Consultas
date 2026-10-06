@@ -3,3 +3,8 @@ docs/
 
 # Materiais de referência
 *.pdf
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
