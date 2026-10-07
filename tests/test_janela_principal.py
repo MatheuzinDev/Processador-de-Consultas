@@ -39,17 +39,50 @@ class TestJanelaPrincipal(unittest.TestCase):
     def test_constroi_componentes_e_estado_inicial(self) -> None:
         self.assertEqual(self.janela.windowTitle(), "Processador de Consultas SQL")
         self.assertEqual(self.janela.editor_sql.toPlainText(), "")
-        self.assertEqual(self.janela.botao_analisar.text(), "Analisar consulta")
+        self.assertEqual(self.janela.botao_analisar.text(), "ANALISAR CONSULTA")
         self.assertEqual(self.janela.rotulo_status.property("estado"), "neutro")
+        self.assertEqual(self.janela.rotulo_tipo_status.text(), "EDITOR PRONTO")
+        self.assertEqual(
+            self.janela.editor_sql.placeholderText(),
+            "SELECT Cliente.Nome\nFROM Cliente;",
+        )
+        self.assertEqual(self.janela.editor_sql.extraSelections(), [])
         self.assertIn(
             "Digite uma consulta SQL",
             self.janela.rotulo_status.toPlainText(),
+        )
+
+    def test_editor_exibe_area_numerada_para_consulta_multilinha(self) -> None:
+        self.janela.editor_sql.setPlainText("SELECT Nome\nFROM Cliente\n;")
+        self.aplicacao.processEvents()
+
+        editor = self.janela.editor_sql
+        self.assertEqual(editor.blockCount(), 3)
+        self.assertTrue(editor.area_numeros.isVisibleTo(self.janela))
+        self.assertEqual(
+            editor.viewportMargins().left(),
+            editor.largura_area_numeros(),
+        )
+        self.assertEqual(len(editor.extraSelections()), 1)
+
+    def test_estatisticas_acompanham_texto_do_editor(self) -> None:
+        self.janela.editor_sql.setPlainText("SELECT Nome\nFROM Cliente;")
+        self.aplicacao.processEvents()
+
+        self.assertEqual(
+            self.janela.rotulo_estatisticas.text(),
+            "02 LINHAS  /  025 CARACTERES",
         )
 
     def test_consulta_valida_mostra_resumo(self) -> None:
         self._analisar("SELECT Nome FROM Cliente;")
 
         self.assertEqual(self.janela.rotulo_status.property("estado"), "sucesso")
+        self.assertEqual(self.janela.rotulo_tipo_status.text(), "CONSULTA VÁLIDA")
+        self.assertEqual(
+            self.janela.rotulo_tipo_status.property("estado"),
+            "sucesso",
+        )
         self.assertEqual(
             self.janela.rotulo_status.toPlainText(),
             "Consulta válida. Colunas: 1. Tabelas: 1.",
@@ -142,6 +175,28 @@ class TestJanelaPrincipal(unittest.TestCase):
 
         processar.assert_called_once_with(sql)
         self.assertEqual(self.janela.rotulo_status.property("estado"), "sucesso")
+
+    def test_ctrl_enter_chama_fachada_com_sql_exato(self) -> None:
+        sql = "SELECT Nome FROM Cliente;"
+        consulta = ConsultaSQL(
+            (ReferenciaColuna("Nome", "Cliente", TipoDado.TEXTO),),
+            "Cliente",
+        )
+        self.janela.editor_sql.setPlainText(sql)
+        self.janela.editor_sql.setFocus()
+
+        with patch(
+            "ui.janela_principal.processar_consulta",
+            return_value=consulta,
+        ) as processar:
+            QTest.keyClick(
+                self.janela.editor_sql,
+                Qt.Key.Key_Return,
+                Qt.KeyboardModifier.ControlModifier,
+            )
+            self.aplicacao.processEvents()
+
+        processar.assert_called_once_with(sql)
 
     def test_status_e_neutralizado_antes_de_chamar_fachada(self) -> None:
         self._analisar("SELECT Nome FROM Cliente;")
