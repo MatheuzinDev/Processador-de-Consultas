@@ -24,4 +24,4 @@ Join Status on Status.idstatus = Pedido.status_idstatus
 Join pedido_has_produto on pedido.idPedido = pedido_has_produto.Pedido_idPedido
 Join produto on produto.idProduto = pedido_has_produto.Produto_idProduto
 Join categoria on categoria.idcategoria = produto.Categoria_idCategoria
-where Status.descricao = 'Aberto' and cliente.email = 'Luffy@gmail.com' and pedido.ValorTotalPedido = 0
+where Status.descricao = 'Aberto' and cliente.email = 'Luffy@gmail.com' and pedido.ValorTotalPedido = 0;

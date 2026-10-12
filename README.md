@@ -10,8 +10,29 @@ O projeto não acessa um banco de dados real nem executa consultas sobre registr
 
 - Python 3.12
 - PySide6 6.8 ou superior, na linha 6.x
+- Graphviz
 
 ## Instalação
+
+
+### 1. Instalar o Graphviz (Ferramenta do Sistema)
+
+No PowerShell (como Administrador):
+```powershell
+# Instalação do binário do Graphviz via WinGet
+winget install Graphviz
+```
+
+Linux (Ubuntu/Debian):
+```bash
+sudo apt update && sudo apt install -y graphviz
+```
+
+macOS
+```powershell
+brew install graphviz
+```
+### 2. Instalar dependências
 
 No PowerShell:
 
