@@ -18,14 +18,17 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSizePolicy,
+    QStackedWidget,  # <-- Nova importação
+    QTabWidget,      # <-- Nova importação
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from core.erros import ErroSemantico, ErroSintatico
+from core.grafo import GrafoOperadores
 from core.processador import processar_consulta
-
+from core.conversao import AlgebraRelacional
 
 _COR_LINHA_ATIVA = "#17395e"
 _COR_GUTTER = "#071a30"
@@ -70,16 +73,44 @@ QLabel#nomeArquivo {
     font-weight: 700;
 }
 
-QPlainTextEdit#editorSql {
+QPlainTextEdit#editorSql,
+QTextEdit#textoAlgebra,
+QTextEdit#textoGrafo {
     background-color: #0d2745;
     color: #fff8eb;
     border: none;
     selection-background-color: #2457c5;
     selection-color: #fff8eb;
+    font-family: Consolas, monospace;
+    font-size: 16px;
+    padding: 14px;
 }
 
-QPlainTextEdit#editorSql:focus {
+QPlainTextEdit#editorSql:focus,
+QTextEdit#textoAlgebra:focus,
+QTextEdit#textoGrafo:focus {
     border: none;
+}
+
+/* Estilo para as abas de visualização */
+QTabWidget::pane {
+    border: none;
+    background-color: #0d2745;
+}
+
+QTabBar::tab {
+    background-color: #071a30;
+    color: #93a8bf;
+    padding: 8px 16px;
+    border-right: 1px solid #0d2745;
+    font-family: Consolas, monospace;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+QTabBar::tab:selected {
+    background-color: #0d2745;
+    color: #fff8eb;
 }
 
 QFrame#acoesEditor {
@@ -123,6 +154,28 @@ QPushButton#botaoAnalisar:pressed {
 
 QPushButton#botaoAnalisar:focus {
     border: 2px solid #d9f45d;
+}
+
+QPushButton#botaoAlternar {
+    background-color: #2457c5;
+    color: #fff8eb;
+    border: 1px solid #fff8eb;
+    border-radius: 3px;
+    padding: 9px 18px;
+    font-family: Consolas, monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+}
+
+QPushButton#botaoAlternar:hover {
+    background-color: #386de0;
+}
+
+QPushButton#botaoAlternar:disabled {
+    background-color: #4e6279;
+    color: #93a8bf;
+    border-color: #4e6279;
 }
 
 QFrame#painelStatus {
@@ -325,11 +378,9 @@ class JanelaPrincipal(QMainWindow):
 
     def _criar_cabecalho(self) -> QVBoxLayout:
         cabecalho = QVBoxLayout()
-
         titulo = QLabel("Processador de Consultas SQL")
         titulo.setObjectName("titulo")
         cabecalho.addWidget(titulo)
-
         return cabecalho
 
     def _criar_painel_entrada(self) -> QFrame:
@@ -343,37 +394,55 @@ class JanelaPrincipal(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        # Barra do arquivo (mantida fixa no topo do painel)
         barra = QFrame()
         barra.setObjectName("barraArquivo")
         layout_barra = QHBoxLayout(barra)
         layout_barra.setContentsMargins(15, 10, 15, 10)
         layout_barra.setSpacing(10)
-
         controles = QLabel("●  ●  ●")
         controles.setObjectName("controlesJanela")
-        controles.setAccessibleName("Indicadores decorativos da janela")
         layout_barra.addWidget(controles)
-
         nome_arquivo = QLabel("consulta.sql")
         nome_arquivo.setObjectName("nomeArquivo")
         layout_barra.addWidget(nome_arquivo)
         layout_barra.addStretch(1)
         layout.addWidget(barra)
 
+        # QStackedWidget para alternar entre Editor e Visualização
+        self.pilha_visoes = QStackedWidget()
+        
+        # --- Visão 0: Editor SQL ---
         self.editor_sql = _EditorSQL()
         self.editor_sql.setObjectName("editorSql")
-        self.editor_sql.setAccessibleName("Editor da consulta SQL com linhas numeradas")
-        self.editor_sql.setToolTip(
-            "Digite uma consulta SQL terminada por ponto e vírgula."
-        )
         self.editor_sql.setPlaceholderText("SELECT Cliente.Nome\nFROM Cliente;")
         self.editor_sql.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.editor_sql.setFont(
             QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
         )
-        self.editor_sql.document().setDocumentMargin(14)
-        layout.addWidget(self.editor_sql, 1)
+        # Margem ajustada para zero pois o QStackedWidget vai preencher
+        self.editor_sql.document().setDocumentMargin(0) 
+        self.pilha_visoes.addWidget(self.editor_sql)
 
+        # --- Visão 1: Abas de Álgebra e Grafo ---
+        self.abas_visualizacao = QTabWidget()
+        
+        self.texto_algebra = QTextEdit()
+        self.texto_algebra.setObjectName("textoAlgebra")
+        self.texto_algebra.setReadOnly(True)
+        
+        self.texto_grafo = QTextEdit()
+        self.texto_grafo.setObjectName("textoGrafo")
+        self.texto_grafo.setReadOnly(True)
+        
+        self.abas_visualizacao.addTab(self.texto_algebra, "Álgebra Relacional")
+        self.abas_visualizacao.addTab(self.texto_grafo, "Grafo de Operadores")
+        self.pilha_visoes.addWidget(self.abas_visualizacao)
+
+        # Adiciona a pilha ao layout central
+        layout.addWidget(self.pilha_visoes, 1)
+
+        # Barra de Ações Inferior (mantida fixa na base)
         acoes = QFrame()
         acoes.setObjectName("acoesEditor")
         layout_acoes = QHBoxLayout(acoes)
@@ -382,16 +451,18 @@ class JanelaPrincipal(QMainWindow):
 
         self.rotulo_estatisticas = QLabel()
         self.rotulo_estatisticas.setObjectName("estatisticas")
-        self.rotulo_estatisticas.setAccessibleName("Estatísticas da consulta")
         layout_acoes.addWidget(self.rotulo_estatisticas)
         layout_acoes.addStretch(1)
 
+        # Botão para alternar entre as visões
+        self.botao_alternar = QPushButton("VER ÁLGEBRA E GRAFO")
+        self.botao_alternar.setObjectName("botaoAlternar")
+        self.botao_alternar.setEnabled(False)  # Só habilita se a consulta for válida
+        self.botao_alternar.clicked.connect(self._alternar_visao)
+        layout_acoes.addWidget(self.botao_alternar)
+
         self.botao_analisar = QPushButton("ANALISAR CONSULTA")
         self.botao_analisar.setObjectName("botaoAnalisar")
-        self.botao_analisar.setAccessibleName("Analisar consulta SQL")
-        self.botao_analisar.setToolTip(
-            "Executar análise sintática e semântica (Ctrl + Enter)."
-        )
         self.botao_analisar.clicked.connect(self._analisar)
 
         atalho = QLabel("ATALHO: CTRL + ENTER")
@@ -403,8 +474,9 @@ class JanelaPrincipal(QMainWindow):
         self.atalho_analisar = QShortcut(QKeySequence("Ctrl+Return"), self)
         self.atalho_analisar.activated.connect(self._analisar)
 
-        self.editor_sql.textChanged.connect(self._atualizar_estatisticas)
+        self.editor_sql.textChanged.connect(self._ao_alterar_texto)
         self._atualizar_estatisticas()
+        
         return painel
 
     def _criar_painel_status(self) -> QFrame:
@@ -422,7 +494,6 @@ class JanelaPrincipal(QMainWindow):
 
         self.rotulo_status = QTextEdit()
         self.rotulo_status.setObjectName("status")
-        self.rotulo_status.setAccessibleName("Status da análise")
         self.rotulo_status.setReadOnly(True)
         self.rotulo_status.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.rotulo_status.setWordWrapMode(
@@ -447,7 +518,18 @@ class JanelaPrincipal(QMainWindow):
             f"{caracteres:03d} {texto_caracteres}"
         )
 
+    def _ao_alterar_texto(self) -> None:
+        self._atualizar_estatisticas()
+        # Se o usuário edita a consulta, desabilita a visualização até nova análise
+        self.botao_alternar.setEnabled(False)
+        # E se estiver na aba de visualização, volta automaticamente para o editor
+        if self.pilha_visoes.currentIndex() != 0:
+            self._alternar_visao()
+
     def _analisar(self) -> None:
+        # Reseta o botão de alternar visão
+        self.botao_alternar.setEnabled(False)
+        
         sql = self.editor_sql.toPlainText()
         self._definir_status("Analisando consulta...", "neutro", "ANALISANDO")
 
@@ -456,10 +538,16 @@ class JanelaPrincipal(QMainWindow):
         except ErroSintatico as erro:
             self._definir_status(str(erro), "sintatico", "ERRO SINTÁTICO")
             self.editor_sql.setFocus()
+            # Força voltar para a consulta em caso de erro
+            if self.pilha_visoes.currentIndex() != 0:
+                self._alternar_visao()
             return
         except ErroSemantico as erro:
             self._definir_status(str(erro), "semantico", "ERRO SEMÂNTICO")
             self.editor_sql.setFocus()
+            # Força voltar para a consulta em caso de erro
+            if self.pilha_visoes.currentIndex() != 0:
+                self._alternar_visao()
             return
 
         quantidade_tabelas = 1 + len(consulta.juncoes)
@@ -469,6 +557,32 @@ class JanelaPrincipal(QMainWindow):
             "sucesso",
             "CONSULTA VÁLIDA",
         )
+
+        expressao_algebra = AlgebraRelacional.converter_html(consulta)
+        self.texto_algebra.setText(expressao_algebra)
+        
+        ast_dict = AlgebraRelacional.converter_dicionario(consulta)
+        caminho_imagem = GrafoOperadores.gerar_imagem_grafo(ast_dict, "grafo_atual")
+        html_imagem = f"""
+            <div style='text-align: center; padding: 10px; background-color: #0d2745;'>
+                <img src='{caminho_imagem}' alt='Grafo de Operadores' style='max-width: 100%; height: auto; display: block; margin: 0 auto;'>
+            </div>
+        """
+        self.texto_grafo.setHtml(html_imagem)
+        
+        self.botao_alternar.setEnabled(True)
+
+    def _alternar_visao(self) -> None:
+        if self.pilha_visoes.currentIndex() == 0:
+            # Vai para visualização (Álgebra/Grafo)
+            self.pilha_visoes.setCurrentIndex(1)
+            self.botao_alternar.setText("VER CONSULTA")
+            self.botao_analisar.hide()
+        else:
+            # Volta para o Editor SQL
+            self.pilha_visoes.setCurrentIndex(0)
+            self.botao_alternar.setText("VER ÁLGEBRA E GRAFO")
+            self.botao_analisar.show()
 
     def _definir_status(self, mensagem: str, estado: str, titulo: str) -> None:
         self.rotulo_tipo_status.setText(titulo)
