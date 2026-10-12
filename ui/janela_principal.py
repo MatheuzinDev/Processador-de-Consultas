@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from core.erros import ErroSemantico, ErroSintatico
+from core.grafo import GrafoOperadores
 from core.processador import processar_consulta
 from core.conversao import AlgebraRelacional
 
@@ -558,15 +559,17 @@ class JanelaPrincipal(QMainWindow):
         )
 
         expressao_algebra = AlgebraRelacional.converter_html(consulta)
-
-
-        # Popula as abas de visualização com os dados processados da consulta
-        # (Substitua pelos atributos reais do seu objeto `consulta`)
         self.texto_algebra.setText(expressao_algebra)
-        # self.texto_algebra.setText("Representação da Álgebra Relacional gerada com sucesso...\n\n(Implemente a visualização baseada na classe Consulta)")
-        self.texto_grafo.setText("Representação do Grafo de Operadores gerada com sucesso...\n\n(Implemente a visualização baseada na classe Consulta)")
         
-        # Habilita a visualização
+        ast_dict = AlgebraRelacional.converter_dicionario(consulta)
+        caminho_imagem = GrafoOperadores.gerar_imagem_grafo(ast_dict, "grafo_atual")
+        html_imagem = f"""
+            <div style='text-align: center; padding: 10px; background-color: #0d2745;'>
+                <img src='{caminho_imagem}' alt='Grafo de Operadores' style='max-width: 100%; height: auto; display: block; margin: 0 auto;'>
+            </div>
+        """
+        self.texto_grafo.setHtml(html_imagem)
+        
         self.botao_alternar.setEnabled(True)
 
     def _alternar_visao(self) -> None:
