@@ -1,3 +1,5 @@
+from html import escape
+
 from PySide6.QtCore import QRect, QSize, Qt
 from PySide6.QtGui import (
     QColor,
@@ -29,6 +31,7 @@ from core.erros import ErroSemantico, ErroSintatico
 from core.grafo import GrafoOperadores
 from core.processador import processar_consulta
 from core.conversao import AlgebraRelacional
+from core.otimizacao import ResultadoOtimizacao, otimizar_consulta, para_dicionario
 
 _COR_LINHA_ATIVA = "#17395e"
 _COR_GUTTER = "#071a30"
@@ -75,7 +78,9 @@ QLabel#nomeArquivo {
 
 QPlainTextEdit#editorSql,
 QTextEdit#textoAlgebra,
-QTextEdit#textoGrafo {
+QTextEdit#textoGrafo,
+QTextEdit#textoOtimizacao,
+QTextEdit#textoGrafoOtimizado {
     background-color: #0d2745;
     color: #fff8eb;
     border: none;
@@ -88,7 +93,9 @@ QTextEdit#textoGrafo {
 
 QPlainTextEdit#editorSql:focus,
 QTextEdit#textoAlgebra:focus,
-QTextEdit#textoGrafo:focus {
+QTextEdit#textoGrafo:focus,
+QTextEdit#textoOtimizacao:focus,
+QTextEdit#textoGrafoOtimizado:focus {
     border: none;
 }
 
@@ -435,8 +442,21 @@ class JanelaPrincipal(QMainWindow):
         self.texto_grafo.setObjectName("textoGrafo")
         self.texto_grafo.setReadOnly(True)
         
+        self.texto_otimizacao = QTextEdit()
+        self.texto_otimizacao.setObjectName("textoOtimizacao")
+        self.texto_otimizacao.setReadOnly(True)
+
+        self.texto_grafo_otimizado = QTextEdit()
+        self.texto_grafo_otimizado.setObjectName("textoGrafoOtimizado")
+        self.texto_grafo_otimizado.setReadOnly(True)
+
         self.abas_visualizacao.addTab(self.texto_algebra, "Álgebra Relacional")
-        self.abas_visualizacao.addTab(self.texto_grafo, "Grafo de Operadores")
+        self.abas_visualizacao.addTab(self.texto_grafo, "Grafo Original")
+        self.abas_visualizacao.addTab(self.texto_otimizacao, "Álgebra Otimizada")
+        self.abas_visualizacao.addTab(
+            self.texto_grafo_otimizado,
+            "Grafo Otimizado",
+        )
         self.pilha_visoes.addWidget(self.abas_visualizacao)
 
         # Adiciona a pilha ao layout central
@@ -563,14 +583,43 @@ class JanelaPrincipal(QMainWindow):
         
         ast_dict = AlgebraRelacional.converter_dicionario(consulta)
         caminho_imagem = GrafoOperadores.gerar_imagem_grafo(ast_dict, "grafo_atual")
-        html_imagem = f"""
+        self.texto_grafo.setHtml(self._html_imagem(caminho_imagem, "Grafo de Operadores"))
+
+        otimizacao = otimizar_consulta(consulta)
+        self.texto_otimizacao.setHtml(self._html_otimizacao(otimizacao))
+        caminho_otimizado = GrafoOperadores.gerar_imagem_grafo(
+            para_dicionario(otimizacao.arvore),
+            "grafo_otimizado",
+        )
+        self.texto_grafo_otimizado.setHtml(
+            self._html_imagem(caminho_otimizado, "Grafo Otimizado")
+        )
+
+        self.botao_alternar.setEnabled(True)
+
+    @staticmethod
+    def _html_imagem(caminho_imagem: str, descricao: str) -> str:
+        return f"""
             <div style='text-align: center; padding: 10px; background-color: #0d2745;'>
-                <img src='{caminho_imagem}' alt='Grafo de Operadores' style='max-width: 100%; height: auto; display: block; margin: 0 auto;'>
+                <img src='{caminho_imagem}' alt='{descricao}' style='max-width: 100%; height: auto; display: block; margin: 0 auto;'>
             </div>
         """
-        self.texto_grafo.setHtml(html_imagem)
-        
-        self.botao_alternar.setEnabled(True)
+
+    @staticmethod
+    def _html_otimizacao(otimizacao: ResultadoOtimizacao) -> str:
+        blocos = []
+        for numero, passo in enumerate(otimizacao.passos, start=1):
+            blocos.append(
+                f"<p style='color: #d9f45d; font-size: 18px; font-weight: 700;'>"
+                f"Passo {numero} – {escape(passo.heuristica)}</p>"
+                f"<p style='color: #93a8bf; font-size: 13px;'>{escape(passo.descricao)}</p>"
+                f"<p style='color: #fff8eb; font-size: 15px;'>{escape(passo.expressao)}</p>"
+            )
+        return (
+            "<div style='font-family: Consolas, monospace; line-height: 1.6; padding: 15px;'>"
+            + "<hr style='border-color: #294868;'>".join(blocos)
+            + "</div>"
+        )
 
     def _alternar_visao(self) -> None:
         if self.pilha_visoes.currentIndex() == 0:

@@ -133,6 +133,19 @@ class TestJanelaPrincipal(unittest.TestCase):
                     self.janela.rotulo_status.toPlainText(),
                 )
 
+    def test_abas_incluem_algebra_e_grafo_otimizados(self) -> None:
+        abas = self.janela.abas_visualizacao
+
+        self.assertEqual(
+            [abas.tabText(indice) for indice in range(abas.count())],
+            [
+                "Álgebra Relacional",
+                "Grafo Original",
+                "Álgebra Otimizada",
+                "Grafo Otimizado",
+            ],
+        )
+
     def test_sucesso_seguido_de_erro_remove_mensagem_anterior(self) -> None:
         self._analisar("SELECT Nome FROM Cliente;")
         self._analisar("SELECT Nome FROM Pessoa;")

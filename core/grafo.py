@@ -25,6 +25,7 @@ class GrafoOperadores:
             "Projecao": {"fill": "#1b3a57", "font": "#d9f45d", "border": "#2457c5"}, # Destaque elegante
             "Filtro":   {"fill": "#2d2a1e", "font": "#f0b84b", "border": "#f0b84b"}, # Tom amarelado suave
             "Juncao":   {"fill": "#172d24", "font": "#5cd9b2", "border": "#2e7d60"}, # Tom esverdeado moderno
+            "Produto":  {"fill": "#3a1d1a", "font": "#f08b7e", "border": "#bd4a3c"}, # Produto cartesiano em alerta
             "Tabela":   {"fill": "#0d2745", "font": "#fff8eb", "border": "#294868"}  # Azul base da UI
         }
 
