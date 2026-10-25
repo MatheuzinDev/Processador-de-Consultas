@@ -32,6 +32,7 @@ from core.grafo import GrafoOperadores
 from core.processador import processar_consulta
 from core.conversao import AlgebraRelacional
 from core.otimizacao import ResultadoOtimizacao, otimizar_consulta, para_dicionario
+from core.plano_execucao import PlanoExecucao, gerar_plano_execucao
 
 _COR_LINHA_ATIVA = "#17395e"
 _COR_GUTTER = "#071a30"
@@ -80,7 +81,8 @@ QPlainTextEdit#editorSql,
 QTextEdit#textoAlgebra,
 QTextEdit#textoGrafo,
 QTextEdit#textoOtimizacao,
-QTextEdit#textoGrafoOtimizado {
+QTextEdit#textoGrafoOtimizado,
+QTextEdit#textoPlano {
     background-color: #0d2745;
     color: #fff8eb;
     border: none;
@@ -95,7 +97,8 @@ QPlainTextEdit#editorSql:focus,
 QTextEdit#textoAlgebra:focus,
 QTextEdit#textoGrafo:focus,
 QTextEdit#textoOtimizacao:focus,
-QTextEdit#textoGrafoOtimizado:focus {
+QTextEdit#textoGrafoOtimizado:focus,
+QTextEdit#textoPlano:focus {
     border: none;
 }
 
@@ -450,6 +453,10 @@ class JanelaPrincipal(QMainWindow):
         self.texto_grafo_otimizado.setObjectName("textoGrafoOtimizado")
         self.texto_grafo_otimizado.setReadOnly(True)
 
+        self.texto_plano = QTextEdit()
+        self.texto_plano.setObjectName("textoPlano")
+        self.texto_plano.setReadOnly(True)
+
         self.abas_visualizacao.addTab(self.texto_algebra, "Álgebra Relacional")
         self.abas_visualizacao.addTab(self.texto_grafo, "Grafo Original")
         self.abas_visualizacao.addTab(self.texto_otimizacao, "Álgebra Otimizada")
@@ -459,6 +466,8 @@ class JanelaPrincipal(QMainWindow):
         )
         self.pilha_visoes.addWidget(self.abas_visualizacao)
 
+        self.abas_visualizacao.addTab(self.texto_plano, "Plano de Execução")
+        
         # Adiciona a pilha ao layout central
         layout.addWidget(self.pilha_visoes, 1)
 
@@ -595,6 +604,9 @@ class JanelaPrincipal(QMainWindow):
             self._html_imagem(caminho_otimizado, "Grafo Otimizado")
         )
 
+        plano = gerar_plano_execucao(otimizacao.arvore)
+        self.texto_plano.setHtml(self._html_plano(plano))
+        
         self.botao_alternar.setEnabled(True)
 
     @staticmethod
@@ -632,6 +644,44 @@ class JanelaPrincipal(QMainWindow):
             self.pilha_visoes.setCurrentIndex(0)
             self.botao_alternar.setText("VER ÁLGEBRA E GRAFO")
             self.botao_analisar.show()
+
+    @staticmethod
+    def _html_plano(plano: PlanoExecucao) -> str:
+        cores = {
+            "Tabela": "#fff8eb",
+            "Filtro": "#f0b84b",
+            "Projecao": "#d9f45d",
+            "Juncao": "#5cd9b2",
+            "Produto": "#f08b7e",
+        }
+        cabecalho = "".join(
+            f"<th align='left' style='color: #93a8bf;'>{titulo}</th>"
+            for titulo in ("#", "Resultado", "Operação", "Expressão", "Heurística aplicada")
+        )
+        linhas = []
+        for passo in plano.passos:
+            cor = cores.get(passo.tipo, "#fff8eb")
+            heuristicas = "<br>".join(escape(nome) for nome in passo.heuristicas) or "—"
+            linhas.append(
+                "<tr>"
+                f"<td style='color: #d9f45d; font-weight: 700;'>{passo.numero}</td>"
+                f"<td style='color: {cor}; font-weight: 700;'>{escape(passo.resultado)}</td>"
+                f"<td style='color: {cor};'>{escape(passo.operacao)}</td>"
+                f"<td style='color: #fff8eb;'>{escape(passo.expressao)}</td>"
+                f"<td style='color: #fff8eb;'><b>{heuristicas}</b><br>"
+                f"<span style='color: #93a8bf; font-size: 12px;'>{escape(passo.justificativa)}</span></td>"
+                "</tr>"
+            )
+        return (
+            "<div style='font-family: Consolas, monospace; padding: 15px;'>"
+            f"<p style='color: #d9f45d; font-size: 18px; font-weight: 700;'>"
+            f"Plano de execução – {len(plano.passos)} passos, resultado final em "
+            f"{escape(plano.resultado_final)}</p>"
+            "<table width='100%' cellspacing='0' cellpadding='7'>"
+            f"<tr>{cabecalho}</tr>"
+            + "".join(linhas)
+            + "</table></div>"
+        )
 
     def _definir_status(self, mensagem: str, estado: str, titulo: str) -> None:
         self.rotulo_tipo_status.setText(titulo)

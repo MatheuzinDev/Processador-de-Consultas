@@ -100,6 +100,23 @@ visto em aula:
 A interface mostra cada passo na aba **Álgebra Otimizada** e a árvore final na aba
 **Grafo Otimizado**.
 
+## Plano de execução (HU5)
+
+O plano de execução é gerado em `core/plano_execucao.py` a partir da árvore otimizada da HU4. A árvore
+é percorrida em pós-ordem (filhos da esquerda, filhos da direita e só então o próprio nó), que é a
+ordem em que um banco executaria os operadores: cada passo só usa resultados de passos anteriores e o
+último passo é sempre a projeção final.
+
+Cada passo informa:
+
+1. **Número e resultado** – `R1`, `R2`, … identificam o resultado intermediário produzido.
+2. **Operação** – leitura de tabela, seleção `σ`, projeção `π`, junção `⨝` ou produto cartesiano `×`.
+3. **Expressão** – a operação escrita sobre os resultados anteriores, como `R3 ⨝ R6`.
+4. **Heurística aplicada** – junção, redução de tuplas, redução de atributos ou seleções e junções
+   mais restritivas, com a justificativa daquele passo.
+
+A interface mostra o plano na aba **Plano de Execução**.
+
 ## Fora do escopo atual
 
 - `SELECT *`.
@@ -109,12 +126,11 @@ A interface mostra cada passo na aba **Álgebra Otimizada** e a árvore final na
 - `ORDER BY`, `GROUP BY` e `HAVING`.
 - Outros tipos de junção.
 - Execução em banco de dados real.
-- Álgebra relacional, grafos e plano de execução, que pertencem às próximas etapas.
 
 ## Estrutura
 
 ```text
-core/   tokenização, parsing, catálogo, validação, álgebra, grafo e otimização
+core/   tokenização, parsing, catálogo, validação, álgebra, grafo, otimização e e plano de execução
 ui/     interface PySide6
 tests/  testes automatizados
 main.py ponto de entrada da aplicação
