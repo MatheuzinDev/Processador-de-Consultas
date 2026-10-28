@@ -658,7 +658,6 @@ class JanelaPrincipal(QMainWindow):
             "Filtro": "#f0b84b",
             "Projecao": "#d9f45d",
             "Juncao": "#5cd9b2",
-            "Produto": "#f08b7e",
         }
         cabecalho = "".join(
             f"<th align='left' style='color: #93a8bf;'>{titulo}</th>"
