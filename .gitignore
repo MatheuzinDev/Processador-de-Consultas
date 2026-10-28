@@ -3,6 +3,7 @@ docs/
 
 # Materiais de referência
 *.pdf
+core/conhecimento/
 
 # Python
 __pycache__/
