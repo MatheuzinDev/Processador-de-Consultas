@@ -1,3 +1,5 @@
+from html import escape
+
 from PySide6.QtCore import QRect, QSize, Qt
 from PySide6.QtGui import (
     QColor,
@@ -29,6 +31,8 @@ from core.erros import ErroSemantico, ErroSintatico
 from core.grafo import GrafoOperadores
 from core.processador import processar_consulta
 from core.conversao import AlgebraRelacional
+from core.otimizacao import ResultadoOtimizacao, otimizar_consulta, para_dicionario
+from core.plano_execucao import PlanoExecucao, gerar_plano_execucao
 
 _COR_LINHA_ATIVA = "#17395e"
 _COR_GUTTER = "#071a30"
@@ -75,7 +79,10 @@ QLabel#nomeArquivo {
 
 QPlainTextEdit#editorSql,
 QTextEdit#textoAlgebra,
-QTextEdit#textoGrafo {
+QTextEdit#textoGrafo,
+QTextEdit#textoOtimizacao,
+QTextEdit#textoGrafoOtimizado,
+QTextEdit#textoPlano {
     background-color: #0d2745;
     color: #fff8eb;
     border: none;
@@ -88,7 +95,10 @@ QTextEdit#textoGrafo {
 
 QPlainTextEdit#editorSql:focus,
 QTextEdit#textoAlgebra:focus,
-QTextEdit#textoGrafo:focus {
+QTextEdit#textoGrafo:focus,
+QTextEdit#textoOtimizacao:focus,
+QTextEdit#textoGrafoOtimizado:focus,
+QTextEdit#textoPlano:focus {
     border: none;
 }
 
@@ -435,10 +445,29 @@ class JanelaPrincipal(QMainWindow):
         self.texto_grafo.setObjectName("textoGrafo")
         self.texto_grafo.setReadOnly(True)
         
+        self.texto_otimizacao = QTextEdit()
+        self.texto_otimizacao.setObjectName("textoOtimizacao")
+        self.texto_otimizacao.setReadOnly(True)
+
+        self.texto_grafo_otimizado = QTextEdit()
+        self.texto_grafo_otimizado.setObjectName("textoGrafoOtimizado")
+        self.texto_grafo_otimizado.setReadOnly(True)
+
+        self.texto_plano = QTextEdit()
+        self.texto_plano.setObjectName("textoPlano")
+        self.texto_plano.setReadOnly(True)
+
         self.abas_visualizacao.addTab(self.texto_algebra, "Álgebra Relacional")
-        self.abas_visualizacao.addTab(self.texto_grafo, "Grafo de Operadores")
+        self.abas_visualizacao.addTab(self.texto_grafo, "Grafo Original")
+        self.abas_visualizacao.addTab(self.texto_otimizacao, "Álgebra Otimizada")
+        self.abas_visualizacao.addTab(
+            self.texto_grafo_otimizado,
+            "Grafo Otimizado",
+        )
         self.pilha_visoes.addWidget(self.abas_visualizacao)
 
+        self.abas_visualizacao.addTab(self.texto_plano, "Plano de Execução")
+        
         # Adiciona a pilha ao layout central
         layout.addWidget(self.pilha_visoes, 1)
 
@@ -563,14 +592,46 @@ class JanelaPrincipal(QMainWindow):
         
         ast_dict = AlgebraRelacional.converter_dicionario(consulta)
         caminho_imagem = GrafoOperadores.gerar_imagem_grafo(ast_dict, "grafo_atual")
-        html_imagem = f"""
-            <div style='text-align: center; padding: 10px; background-color: #0d2745;'>
-                <img src='{caminho_imagem}' alt='Grafo de Operadores' style='max-width: 100%; height: auto; display: block; margin: 0 auto;'>
-            </div>
-        """
-        self.texto_grafo.setHtml(html_imagem)
+        self.texto_grafo.setHtml(self._html_imagem(caminho_imagem, "Grafo de Operadores"))
+
+        otimizacao = otimizar_consulta(consulta)
+        self.texto_otimizacao.setHtml(self._html_otimizacao(otimizacao))
+        caminho_otimizado = GrafoOperadores.gerar_imagem_grafo(
+            para_dicionario(otimizacao.arvore),
+            "grafo_otimizado",
+        )
+        self.texto_grafo_otimizado.setHtml(
+            self._html_imagem(caminho_otimizado, "Grafo Otimizado")
+        )
+
+        plano = gerar_plano_execucao(otimizacao.arvore)
+        self.texto_plano.setHtml(self._html_plano(plano))
         
         self.botao_alternar.setEnabled(True)
+
+    @staticmethod
+    def _html_imagem(caminho_imagem: str, descricao: str) -> str:
+        return f"""
+            <div style='text-align: center; padding: 10px; background-color: #0d2745;'>
+                <img src='{caminho_imagem}' alt='{descricao}' style='max-width: 100%; height: auto; display: block; margin: 0 auto;'>
+            </div>
+        """
+
+    @staticmethod
+    def _html_otimizacao(otimizacao: ResultadoOtimizacao) -> str:
+        blocos = []
+        for numero, passo in enumerate(otimizacao.passos, start=1):
+            blocos.append(
+                f"<p style='color: #d9f45d; font-size: 18px; font-weight: 700;'>"
+                f"Passo {numero} – {escape(passo.heuristica)}</p>"
+                f"<p style='color: #93a8bf; font-size: 13px;'>{escape(passo.descricao)}</p>"
+                f"<p style='color: #fff8eb; font-size: 15px;'>{escape(passo.expressao)}</p>"
+            )
+        return (
+            "<div style='font-family: Consolas, monospace; line-height: 1.6; padding: 15px;'>"
+            + "<hr style='border-color: #294868;'>".join(blocos)
+            + "</div>"
+        )
 
     def _alternar_visao(self) -> None:
         if self.pilha_visoes.currentIndex() == 0:
@@ -583,6 +644,44 @@ class JanelaPrincipal(QMainWindow):
             self.pilha_visoes.setCurrentIndex(0)
             self.botao_alternar.setText("VER ÁLGEBRA E GRAFO")
             self.botao_analisar.show()
+
+    @staticmethod
+    def _html_plano(plano: PlanoExecucao) -> str:
+        cores = {
+            "Tabela": "#fff8eb",
+            "Filtro": "#f0b84b",
+            "Projecao": "#d9f45d",
+            "Juncao": "#5cd9b2",
+            "Produto": "#f08b7e",
+        }
+        cabecalho = "".join(
+            f"<th align='left' style='color: #93a8bf;'>{titulo}</th>"
+            for titulo in ("#", "Resultado", "Operação", "Expressão", "Heurística aplicada")
+        )
+        linhas = []
+        for passo in plano.passos:
+            cor = cores.get(passo.tipo, "#fff8eb")
+            heuristicas = "<br>".join(escape(nome) for nome in passo.heuristicas) or "—"
+            linhas.append(
+                "<tr>"
+                f"<td style='color: #d9f45d; font-weight: 700;'>{passo.numero}</td>"
+                f"<td style='color: {cor}; font-weight: 700;'>{escape(passo.resultado)}</td>"
+                f"<td style='color: {cor};'>{escape(passo.operacao)}</td>"
+                f"<td style='color: #fff8eb;'>{escape(passo.expressao)}</td>"
+                f"<td style='color: #fff8eb;'><b>{heuristicas}</b><br>"
+                f"<span style='color: #93a8bf; font-size: 12px;'>{escape(passo.justificativa)}</span></td>"
+                "</tr>"
+            )
+        return (
+            "<div style='font-family: Consolas, monospace; padding: 15px;'>"
+            f"<p style='color: #d9f45d; font-size: 18px; font-weight: 700;'>"
+            f"Plano de execução – {len(plano.passos)} passos, resultado final em "
+            f"{escape(plano.resultado_final)}</p>"
+            "<table width='100%' cellspacing='0' cellpadding='7'>"
+            f"<tr>{cabecalho}</tr>"
+            + "".join(linhas)
+            + "</table></div>"
+        )
 
     def _definir_status(self, mensagem: str, estado: str, titulo: str) -> None:
         self.rotulo_tipo_status.setText(titulo)

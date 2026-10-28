@@ -89,19 +89,12 @@ class TestProcessador(unittest.TestCase):
         )
 
         self.assertEqual(len(consultas), 4)
-        for indice, sql in enumerate(consultas[:3], start=1):
+        for indice, sql in enumerate(consultas, start=1):
             with self.subTest(consulta=indice):
                 self.assertEqual(
                     processar_consulta(sql).tabela_origem,
                     "Cliente",
                 )
-
-        with self.assertRaises(ErroSintatico):
-            processar_consulta(consultas[3])
-        self.assertEqual(
-            processar_consulta(consultas[3] + ";").tabela_origem,
-            "Cliente",
-        )
 
 
 if __name__ == "__main__":

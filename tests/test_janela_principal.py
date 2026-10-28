@@ -133,6 +133,20 @@ class TestJanelaPrincipal(unittest.TestCase):
                     self.janela.rotulo_status.toPlainText(),
                 )
 
+    def test_abas_incluem_algebra_e_grafo_otimizados(self) -> None:
+        abas = self.janela.abas_visualizacao
+
+        self.assertEqual(
+            [abas.tabText(indice) for indice in range(abas.count())],
+            [
+                "Álgebra Relacional",
+                "Grafo Original",
+                "Álgebra Otimizada",
+                "Grafo Otimizado",
+                "Plano de Execução"
+            ],
+        )
+
     def test_sucesso_seguido_de_erro_remove_mensagem_anterior(self) -> None:
         self._analisar("SELECT Nome FROM Cliente;")
         self._analisar("SELECT Nome FROM Pessoa;")
@@ -252,6 +266,77 @@ class TestJanelaPrincipal(unittest.TestCase):
                 self.assertTrue(componente.isVisibleTo(self.janela))
                 self.assertTrue(central.rect().contains(geometria))
 
+    def test_plano_de_execucao_lista_passos_e_heuristicas(self) -> None:
+        self._analisar(
+            "SELECT Cliente.Nome, Pedido.idPedido FROM Cliente "
+            "JOIN Pedido ON Cliente.idCliente = Pedido.Cliente_idCliente "
+            "WHERE Cliente.TipoCliente_idTipoCliente = 1 "
+            "AND Pedido.ValorTotalPedido = 0;"
+        )
+
+        texto = self.janela.texto_plano.toPlainText()
+        self.assertIn("Plano de execução", texto)
+        self.assertIn("8 passos", texto)
+        for trecho in (
+            "Leitura de tabela",
+            "Seleção (σ)",
+            "Projeção (π)",
+            "Junção (⨝)",
+            "Projeção final (π)",
+            "Heurística de junção",
+            "Heurística de redução de tuplas",
+            "Heurística de redução de atributos",
+            "Heurística de seleções e junções mais restritivas",
+        ):
+            with self.subTest(trecho=trecho):
+                self.assertIn(trecho, texto)
+
+    def test_plano_de_execucao_mostra_passos_na_ordem_do_plano(self) -> None:
+        self._analisar(
+            "SELECT Cliente.Nome, Pedido.idPedido FROM Cliente "
+            "JOIN Pedido ON Cliente.idCliente = Pedido.Cliente_idCliente;"
+        )
+
+        texto = self.janela.texto_plano.toPlainText()
+        posicoes = [texto.index(f"R{numero}") for numero in range(1, 6)]
+        self.assertEqual(posicoes, sorted(posicoes))
+
+    def test_plano_de_execucao_de_consulta_simples(self) -> None:
+        self._analisar("SELECT Nome FROM Cliente;")
+
+        texto = self.janela.texto_plano.toPlainText()
+        self.assertIn("2 passos", texto)
+        self.assertIn("Única tabela da consulta.", texto)
+
+    def test_plano_de_execucao_e_atualizado_em_nova_analise(self) -> None:
+        self._analisar("SELECT Nome FROM Cliente;")
+        self._analisar(
+            "SELECT Cliente.Nome FROM Cliente "
+            "JOIN Pedido ON Cliente.idCliente = Pedido.Cliente_idCliente;"
+        )
+
+        texto = self.janela.texto_plano.toPlainText()
+        self.assertNotIn("2 passos", texto)
+        self.assertIn("Junção (⨝)", texto)
+
+    def test_plano_de_execucao_escapa_texto_dos_literais(self) -> None:
+        self._analisar("SELECT Nome FROM Cliente WHERE Nome = '<b>&';")
+
+        self.assertIn("<b>&", self.janela.texto_plano.toPlainText())
+
+    def test_erro_nao_gera_plano_de_execucao(self) -> None:
+        self._analisar("SELECT Nome FROM Pessoa;")
+
+        self.assertEqual(self.janela.texto_plano.toPlainText(), "")
+        self.assertFalse(self.janela.botao_alternar.isEnabled())
+
+    def test_plano_de_execucao_fica_na_aba_da_visualizacao(self) -> None:
+        self._analisar("SELECT Nome FROM Cliente;")
+
+        abas = self.janela.abas_visualizacao
+        indice = abas.indexOf(self.janela.texto_plano)
+        self.assertEqual(abas.tabText(indice), "Plano de Execução")
+        self.assertTrue(self.janela.botao_alternar.isEnabled())
 
 if __name__ == "__main__":
     unittest.main()
