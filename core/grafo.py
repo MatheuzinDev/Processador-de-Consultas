@@ -54,5 +54,5 @@ class GrafoOperadores:
 
         percorrer_arvore(dicionario_ast)
 
-        dot.render(caminho_saida, format="png", cleanup=True)
-        return f"{caminho_saida}.png"
+        dot.render(caminho_saida, format="svg", cleanup=True)
+        return f"{caminho_saida}.svg"

@@ -14,6 +14,8 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QFrame,
+    QGraphicsScene,
+    QGraphicsView,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -27,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from PySide6.QtSvgWidgets import QGraphicsSvgItem
 from core.erros import ErroSemantico, ErroSintatico
 from core.grafo import GrafoOperadores
 from core.processador import processar_consulta
@@ -365,6 +368,146 @@ class _EditorSQL(QPlainTextEdit):
             numero_bloco += 1
 
 
+class _VisualizadorGrafo(QWidget):
+    """Visualizador de grafos SVG com zoom e navegação por arraste."""
+
+    FATOR_ZOOM = 1.15
+    ZOOM_MINIMO = 0.15
+    ZOOM_MAXIMO = 8.0
+
+    def __init__(self) -> None:
+        super().__init__()
+
+        self._item_grafo = None
+        self._ajuste_automatico = True
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        # Barra de ferramentas
+        barra = QHBoxLayout()
+        barra.setContentsMargins(8, 8, 8, 0)
+
+        self.botao_mais = QPushButton("＋ Zoom")
+        self.botao_menos = QPushButton("－ Zoom")
+        self.botao_ajustar = QPushButton("Ajustar à tela")
+        self.botao_original = QPushButton("Tamanho original")
+
+        barra.addWidget(self.botao_mais)
+        barra.addWidget(self.botao_menos)
+        barra.addWidget(self.botao_ajustar)
+        barra.addWidget(self.botao_original)
+        barra.addStretch(1)
+
+        layout.addLayout(barra)
+
+        # Área de visualização
+        self.cena = QGraphicsScene(self)
+
+        self.visualizador = QGraphicsView(self.cena)
+        self.visualizador.setObjectName("visualizadorGrafo")
+        self.visualizador.setRenderHint(
+            QPainter.RenderHint.Antialiasing
+        )
+        self.visualizador.setRenderHint(
+            QPainter.RenderHint.TextAntialiasing
+        )
+        self.visualizador.setDragMode(
+            QGraphicsView.DragMode.ScrollHandDrag
+        )
+        self.visualizador.setTransformationAnchor(
+            QGraphicsView.ViewportAnchor.AnchorUnderMouse
+        )
+        self.visualizador.setResizeAnchor(
+            QGraphicsView.ViewportAnchor.AnchorUnderMouse
+        )
+        self.visualizador.setBackgroundBrush(QColor("#0d2745"))
+        self.visualizador.setStyleSheet(
+            "QGraphicsView { border: none; }"
+        )
+
+        layout.addWidget(self.visualizador, 1)
+
+        self.botao_mais.clicked.connect(
+            lambda: self._aplicar_zoom(self.FATOR_ZOOM)
+        )
+        self.botao_menos.clicked.connect(
+            lambda: self._aplicar_zoom(1 / self.FATOR_ZOOM)
+        )
+        self.botao_ajustar.clicked.connect(self.ajustar_a_tela)
+        self.botao_original.clicked.connect(self.tamanho_original)
+
+    def carregar_grafo(self, caminho_svg: str) -> None:
+        """Carrega um SVG novo e enquadra o grafo na área visível."""
+        self.cena.clear()
+        self._item_grafo = None
+
+        item = QGraphicsSvgItem(caminho_svg)
+
+        if item.renderer().isValid():
+            self._item_grafo = item
+            self.cena.addItem(item)
+            self.cena.setSceneRect(item.boundingRect())
+            self.ajustar_a_tela()
+        else:
+            self.cena.addText(
+                "Não foi possível carregar o grafo SVG."
+            )
+
+    def _aplicar_zoom(self, fator: float) -> None:
+        if self._item_grafo is None:
+            return
+
+        escala_atual = self.visualizador.transform().m11()
+        nova_escala = escala_atual * fator
+
+        if not self.ZOOM_MINIMO <= nova_escala <= self.ZOOM_MAXIMO:
+            return
+
+        self._ajuste_automatico = False
+        self.visualizador.scale(fator, fator)
+
+    def wheelEvent(self, evento) -> None:
+        # A roda do mouse amplia ou reduz o grafo.
+        if self._item_grafo is None:
+            super().wheelEvent(evento)
+            return
+
+        fator = (
+            self.FATOR_ZOOM
+            if evento.angleDelta().y() > 0
+            else 1 / self.FATOR_ZOOM
+        )
+        self._aplicar_zoom(fator)
+        evento.accept()
+
+    def ajustar_a_tela(self) -> None:
+        if self._item_grafo is None:
+            return
+
+        self._ajuste_automatico = True
+        self.visualizador.resetTransform()
+        self.visualizador.fitInView(
+            self._item_grafo,
+            Qt.AspectRatioMode.KeepAspectRatio,
+        )
+
+    def tamanho_original(self) -> None:
+        if self._item_grafo is None:
+            return
+
+        self._ajuste_automatico = False
+        self.visualizador.resetTransform()
+        self.visualizador.centerOn(self._item_grafo)
+
+    def resizeEvent(self, evento) -> None:
+        super().resizeEvent(evento)
+
+        if self._ajuste_automatico and self._item_grafo is not None:
+            self.ajustar_a_tela()
+
+
 class JanelaPrincipal(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -446,17 +589,13 @@ class JanelaPrincipal(QMainWindow):
         self.texto_algebra.setObjectName("textoAlgebra")
         self.texto_algebra.setReadOnly(True)
         
-        self.texto_grafo = QTextEdit()
-        self.texto_grafo.setObjectName("textoGrafo")
-        self.texto_grafo.setReadOnly(True)
+        self.texto_grafo = _VisualizadorGrafo()
         
         self.texto_otimizacao = QTextEdit()
         self.texto_otimizacao.setObjectName("textoOtimizacao")
         self.texto_otimizacao.setReadOnly(True)
 
-        self.texto_grafo_otimizado = QTextEdit()
-        self.texto_grafo_otimizado.setObjectName("textoGrafoOtimizado")
-        self.texto_grafo_otimizado.setReadOnly(True)
+        self.texto_grafo_otimizado = _VisualizadorGrafo()
 
         self.texto_plano = QTextEdit()
         self.texto_plano.setObjectName("textoPlano")
@@ -596,8 +735,11 @@ class JanelaPrincipal(QMainWindow):
         self.texto_algebra.setText(expressao_algebra)
         
         ast_dict = AlgebraRelacional.converter_dicionario(consulta)
-        caminho_imagem = GrafoOperadores.gerar_imagem_grafo(ast_dict, "grafo_atual")
-        self.texto_grafo.setHtml(self._html_imagem(caminho_imagem, "Grafo de Operadores"))
+        caminho_imagem = GrafoOperadores.gerar_imagem_grafo(
+            ast_dict,
+            "grafo_atual",
+        )
+        self.texto_grafo.carregar_grafo(caminho_imagem)
 
         otimizacao = otimizar_consulta(consulta)
         self.texto_otimizacao.setHtml(self._html_otimizacao(otimizacao))
@@ -605,9 +747,7 @@ class JanelaPrincipal(QMainWindow):
             para_dicionario(otimizacao.arvore),
             "grafo_otimizado",
         )
-        self.texto_grafo_otimizado.setHtml(
-            self._html_imagem(caminho_otimizado, "Grafo Otimizado")
-        )
+        self.texto_grafo_otimizado.carregar_grafo(caminho_otimizado)
 
         plano = gerar_plano_execucao(otimizacao.arvore)
         self.texto_plano.setHtml(self._html_plano(plano))
