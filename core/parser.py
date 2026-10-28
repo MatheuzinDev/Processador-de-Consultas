@@ -31,6 +31,7 @@ class _Parser:
             TipoToken.IDENTIFICADOR,
             "nome da tabela após FROM",
         ).texto
+        self._rejeitar_produto_cartesiano()
 
         juncoes = []
         while self._aceitar(TipoToken.JOIN) is not None:
@@ -66,6 +67,18 @@ class _Parser:
             "nome de coluna após '.'",
         )
         return ReferenciaColuna(segundo.texto, primeiro.texto)
+
+    def _rejeitar_produto_cartesiano(self) -> None:
+        if not self._verificar(TipoToken.VIRGULA):
+            return
+
+        token = self._atual()
+        raise ErroSintatico(
+            "encontrado ',' após a tabela do FROM; produto cartesiano não é "
+            "suportado, use JOIN ... ON.",
+            token.linha,
+            token.coluna,
+        )
 
     def _analisar_juncao(self) -> JuncaoSQL:
         tabela = self._exigir(

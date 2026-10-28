@@ -31,7 +31,12 @@ from core.erros import ErroSemantico, ErroSintatico
 from core.grafo import GrafoOperadores
 from core.processador import processar_consulta
 from core.conversao import AlgebraRelacional
-from core.otimizacao import ResultadoOtimizacao, otimizar_consulta, para_dicionario
+from core.otimizacao import (
+    ResultadoOtimizacao,
+    otimizar_consulta,
+    para_dicionario,
+    para_html,
+)
 from core.plano_execucao import PlanoExecucao, gerar_plano_execucao
 
 _COR_LINHA_ATIVA = "#17395e"
@@ -625,10 +630,11 @@ class JanelaPrincipal(QMainWindow):
                 f"<p style='color: #d9f45d; font-size: 18px; font-weight: 700;'>"
                 f"Passo {numero} – {escape(passo.heuristica)}</p>"
                 f"<p style='color: #93a8bf; font-size: 13px;'>{escape(passo.descricao)}</p>"
-                f"<p style='color: #fff8eb; font-size: 15px;'>{escape(passo.expressao)}</p>"
+                "<div style='white-space: nowrap; font-size: 24px; line-height: 2.0;'>"
+                f"{para_html(passo.arvore)}</div>"
             )
         return (
-            "<div style='font-family: Consolas, monospace; line-height: 1.6; padding: 15px;'>"
+            "<div style='font-family: Consolas, monospace; padding: 15px;'>"
             + "<hr style='border-color: #294868;'>".join(blocos)
             + "</div>"
         )
@@ -652,7 +658,6 @@ class JanelaPrincipal(QMainWindow):
             "Filtro": "#f0b84b",
             "Projecao": "#d9f45d",
             "Juncao": "#5cd9b2",
-            "Produto": "#f08b7e",
         }
         cabecalho = "".join(
             f"<th align='left' style='color: #93a8bf;'>{titulo}</th>"

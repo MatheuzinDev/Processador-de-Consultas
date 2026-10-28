@@ -1,11 +1,14 @@
 import unittest
 
+from core.erros import ErroSemantico
 from core.otimizacao import (
     NoAlgebra,
     otimizar_consulta,
     para_dicionario,
+    para_html,
     para_texto,
 )
+from core.parser import parsear
 from core.processador import processar_consulta
 
 
@@ -176,6 +179,19 @@ class TestOtimizacao(unittest.TestCase):
                     quantidade_tabelas - 1,
                 )
 
+    def test_tabela_sem_condicao_de_juncao_gera_erro_em_vez_de_produto(self) -> None:
+        # A validação já barra essa consulta; aqui ela chega direto do parser.
+        consulta = parsear(
+            "SELECT Cliente.Nome FROM Cliente JOIN Status "
+            "ON Cliente.idCliente = Cliente.TipoCliente_idTipoCliente;"
+        )
+
+        with self.assertRaises(ErroSemantico) as contexto:
+            otimizar_consulta(consulta)
+
+        self.assertIn("a tabela 'Status' não tem condição de junção", str(contexto.exception))
+        self.assertIn("produto cartesiano não é suportado", str(contexto.exception))
+
     def test_tabela_mais_restritiva_entra_primeiro(self) -> None:
         arvore = _otimizar(
             "SELECT Cliente.Nome, Pedido.DataPedido FROM Cliente "
@@ -233,6 +249,37 @@ class TestOtimizacao(unittest.TestCase):
             "π_{Cliente.Nome}(σ_{Cliente.idCliente = 1}(Cliente))",
         )
 
+    def test_descricoes_de_consulta_de_uma_tabela_nao_citam_juncoes(self) -> None:
+        resultado = _otimizar(
+            "SELECT Cliente.Nome FROM Cliente "
+            "WHERE Cliente.TipoCliente_idTipoCliente = 1;"
+        )
+
+        for passo in resultado.passos:
+            with self.subTest(heuristica=passo.heuristica):
+                self.assertTrue(
+                    passo.descricao.startswith("Consulta com uma única tabela")
+                )
+                self.assertNotIn("reordenadas", passo.descricao)
+
+    def test_ordem_mantida_nao_e_descrita_como_reordenada(self) -> None:
+        resultado = _otimizar(_CONSULTA_DUAS_TABELAS)
+
+        descricao = resultado.passos[-1].descricao
+        self.assertNotIn("reordenadas", descricao)
+        self.assertIn("nenhuma reordenação foi necessária", descricao)
+
+    def test_ordem_alterada_e_descrita_como_reordenada(self) -> None:
+        resultado = _otimizar(
+            "SELECT Cliente.Nome, Pedido.DataPedido FROM Cliente "
+            "JOIN Pedido ON Cliente.idCliente = Pedido.Cliente_idCliente "
+            "WHERE Cliente.Nome <> 'Ana' AND Pedido.idPedido = 10;"
+        )
+
+        self.assertTrue(
+            resultado.passos[-1].descricao.startswith("Folhas reordenadas")
+        )
+
     def test_texto_da_arvore_otimizada(self) -> None:
         resultado = _otimizar(_CONSULTA_DUAS_TABELAS)
 
@@ -246,6 +293,33 @@ class TestOtimizacao(unittest.TestCase):
             "π_{Pedido.idPedido, Pedido.DataPedido, Pedido.ValorTotalPedido, "
             "Pedido.Cliente_idCliente}(σ_{Pedido.ValorTotalPedido = 0}(Pedido))))",
         )
+
+    def test_cada_passo_guarda_a_propria_arvore(self) -> None:
+        resultado = _otimizar(_CONSULTA_DUAS_TABELAS)
+
+        for passo in resultado.passos:
+            with self.subTest(heuristica=passo.heuristica):
+                self.assertEqual(passo.expressao, para_texto(passo.arvore))
+        self.assertIs(resultado.passos[-1].arvore, resultado.arvore)
+
+    def test_html_segue_o_estilo_da_algebra_relacional(self) -> None:
+        resultado = _otimizar(_CONSULTA_DUAS_TABELAS)
+
+        html = para_html(resultado.arvore)
+        self.assertTrue(html.startswith("<span style='font-size: 20px; color: #bd4a3c;'>π</span>"))
+        self.assertIn("color: #f0b84b;'>σ</span>", html)
+        self.assertIn("color: #d9f45d;'>⨝</span>", html)
+        self.assertIn("<b>Cliente</b>", html)
+        self.assertIn("<sub>Cliente.idCliente = Pedido.Cliente_idCliente</sub>", html)
+
+    def test_html_escapa_operadores_e_textos(self) -> None:
+        resultado = _otimizar(
+            "SELECT Cliente.Nome FROM Cliente WHERE Cliente.Nome <> 'Ana';"
+        )
+
+        html = para_html(resultado.arvore)
+        self.assertIn("Cliente.Nome &lt;&gt; &#x27;Ana&#x27;", html)
+        self.assertNotIn("<>", html)
 
     def test_dicionario_compativel_com_grafo(self) -> None:
         arvore = _otimizar(_CONSULTA_DUAS_TABELAS).arvore
