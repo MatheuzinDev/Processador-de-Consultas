@@ -343,7 +343,7 @@ class TestPlanoExecucao(unittest.TestCase):
         leituras = _passos_do_tipo(plano, "Tabela")
         self.assertEqual([leitura.expressao for leitura in leituras], ["Cliente", "Pedido"])
 
-    def test_produto_cartesiano_e_listado_quando_nao_ha_condicao(self) -> None:
+    def test_rejeita_operador_produto_cartesiano(self) -> None:
         arvore = NoAlgebra(
             "Projecao",
             (
@@ -358,17 +358,11 @@ class TestPlanoExecucao(unittest.TestCase):
             colunas=(_coluna("Cliente", "idCliente"),),
         )
 
-        plano = gerar_plano_execucao(arvore, CATALOGO)
-
-        self.assertEqual(
-            [passo.tipo for passo in plano.passos],
-            ["Tabela", "Tabela", "Produto", "Projecao"],
-        )
-        produto = plano.passos[2]
-        self.assertEqual(produto.expressao, "R1 × R2")
-        self.assertEqual(produto.operacao, "Produto cartesiano (×)")
-        self.assertEqual(produto.heuristicas, (HEURISTICA_JUNCAO,))
-        self.assertIn("produto cartesiano", produto.justificativa)
+        with self.assertRaisesRegex(
+            ValueError,
+            "Tipo de operador não suportado na HU5: Produto",
+        ):
+            gerar_plano_execucao(arvore, CATALOGO)
 
     def test_plano_e_deterministico(self) -> None:
         self.assertEqual(_plano(_CONSULTA_OITO_TABELAS), _plano(_CONSULTA_OITO_TABELAS))

@@ -16,7 +16,6 @@ _OPERACOES = {
     "Filtro": "Seleção (σ)",
     "Projecao": "Projeção (π)",
     "Juncao": "Junção (⨝)",
-    "Produto": "Produto cartesiano (×)",
 }
 
 
@@ -57,8 +56,20 @@ class _GeradorPlano:
         )
 
     def gerar(self) -> PlanoExecucao:
+        self._validar_operadores(self._arvore)
         self._executar(self._arvore)
         return PlanoExecucao(tuple(self._passos))
+
+    def _validar_operadores(self, no: NoAlgebra) -> None:
+        tipos_suportados = {"Tabela", "Filtro", "Projecao", "Juncao"}
+
+        if no.tipo not in tipos_suportados:
+            raise ValueError(
+                f"Tipo de operador não suportado na HU5: {no.tipo}"
+            )
+
+        for filho in no.filhos:
+            self._validar_operadores(filho)
 
     def _executar(self, no: NoAlgebra) -> str:
         entradas = tuple(self._executar(filho) for filho in no.filhos)
@@ -88,16 +99,22 @@ class _GeradorPlano:
         self,
         no: NoAlgebra,
         entradas: tuple[str, ...],
-    ) -> tuple[str, tuple[str, ...], str]:
-        if no.tipo == "Tabela":
-            return self._descrever_tabela(no)
-        if no.tipo == "Filtro":
-            return self._descrever_filtro(no, entradas)
-        if no.tipo == "Projecao":
-            return self._descrever_projecao(no, entradas)
-        if no.tipo == "Juncao":
-            return self._descrever_juncao(no, entradas)
-        return self._descrever_produto(entradas)
+        ) -> tuple[str, tuple[str, ...], str]:
+            if no.tipo == "Tabela":
+                return self._descrever_tabela(no)
+
+            if no.tipo == "Filtro":
+                return self._descrever_filtro(no, entradas)
+
+            if no.tipo == "Projecao":
+                return self._descrever_projecao(no, entradas)
+
+            if no.tipo == "Juncao":
+                return self._descrever_juncao(no, entradas)
+
+            raise ValueError(
+                f"Tipo de operador não suportado na HU5: {no.tipo}"
+            )
 
     def _descrever_tabela(
         self,
@@ -170,17 +187,6 @@ class _GeradorPlano:
             (HEURISTICA_JUNCAO, HEURISTICA_RESTRITIVAS),
             justificativa,
         )
-
-    def _descrever_produto(
-        self,
-        entradas: tuple[str, ...],
-    ) -> tuple[str, tuple[str, ...], str]:
-        justificativa = (
-            "Nenhuma condição de junção liga os operandos; o produto "
-            "cartesiano é mantido por não haver alternativa."
-        )
-        return f"{entradas[0]} × {entradas[1]}", (HEURISTICA_JUNCAO,), justificativa
-
 
 def _percorrer(no: NoAlgebra) -> Iterator[NoAlgebra]:
     yield no
