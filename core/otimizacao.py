@@ -19,10 +19,10 @@ from core.modelos import (
 # Restritividade de uma seleção: quanto menor, mais restritiva.
 _PESO_IGUALDADE_CHAVE = 0  # Igualdade em chave primária: devolve no máximo 1 linha
 _PESO_IGUALDADE = 1  # Igualdade em coluna que não é chave
-_PESO_INTERVALO = 2  # Intervalo (<, >, <=, >=): devolve uma faixa de linhas
-_PESO_DIFERENCA = 3  # Diferença (<>): elimina poucas linhas
-_PESO_ENTRE_COLUNAS = 4  # Duas colunas da mesma tabela: não dá para estimar
-_PESO_SEM_SELECAO = 5  # Tabela sem filtro: entra com todas as linhas
+_PESO_INTERVALO = 2  # Peso para comparações de intervalo (<, >, <=, >=): devolvem uma faixa de linhas
+_PESO_DIFERENCA = 3  # Peso para diferença (<>): elimina poucas linhas, por isso é pouco restritiva
+_PESO_ENTRE_COLUNAS = 4  # Peso para comparação entre duas colunas da mesma tabela: não dá para estimar
+_PESO_SEM_SELECAO = 5  # Peso para tabela sem filtro nenhum: entra com todas as linhas
 
 _OPERADORES_INTERVALO = frozenset(("<", ">", "<=", ">="))
 
@@ -31,7 +31,7 @@ _OPERADORES_INTERVALO = frozenset(("<", ">", "<=", ">="))
 class NoAlgebra:
     """Nó da árvore de consulta usada pelo otimizador."""
 
-    tipo: str  # Tabela, Filtro, Projecao ou Juncao
+    tipo: str
     filhos: tuple[NoAlgebra, ...] = ()
     tabela: str | None = None
     condicoes: tuple[Comparacao, ...] = ()
@@ -290,7 +290,6 @@ class _Otimizador:
                 for tabela in restantes
                 if self._conecta(tabela, set(ordem))
             ]
-            # Sem tabela conectada, só restaria o produto cartesiano.
             if not conectadas:
                 raise _erro_sem_juncao(restantes[0])
             proxima = min(conectadas, key=self._chave_ordenacao)
@@ -406,7 +405,6 @@ def separar_conjuncoes(condicao: Condicao | None) -> tuple[Comparacao, ...]:
     while pendentes:
         atual = pendentes.pop()
         if isinstance(atual, Conjuncao):
-            # Empilha a direita antes para a esquerda sair primeiro.
             pendentes.extend((atual.direita, atual.esquerda))
         else:
             comparacoes.append(atual)
@@ -471,13 +469,15 @@ def para_html(no: NoAlgebra) -> str:
             cabeca = f"{_HTML_SELECAO} <sub>{escape(formatar_condicoes(no.condicoes))}</sub>"
         else:
             cabeca = f"{_HTML_PROJECAO} <sub>{escape(formatar_colunas(no.colunas))}</sub>"
-        # σ/π sobre uma tabela só fica na mesma linha; sobre junções, quebra a linha como na HU2.
         if _so_uma_tabela(filho):
             return f"{cabeca}({para_html(filho)})"
-        # Na HU2 só o σ tem recuo depois da quebra.
         recuo = "&nbsp;&nbsp;" if no.tipo == "Filtro" else ""
         return f"{cabeca}<br>{recuo}({para_html(filho)})"
-    esquerda, direita = (para_html(filho) for filho in no.filhos)
+    # Como nos slides, cada lado da junção com σ/π fica entre parênteses próprios.
+    esquerda, direita = (
+        f"({para_html(filho)})" if filho.tipo in ("Filtro", "Projecao") else para_html(filho)
+        for filho in no.filhos
+    )
     operador = f"{_HTML_JUNCAO} <sub>{escape(formatar_condicoes(no.condicoes))}</sub>"
     return f"({esquerda} <br>{_HTML_RECUO}{operador} {direita})"
 

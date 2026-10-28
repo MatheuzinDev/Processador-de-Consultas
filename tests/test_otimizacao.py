@@ -312,6 +312,13 @@ class TestOtimizacao(unittest.TestCase):
         self.assertIn("<b>Cliente</b>", html)
         self.assertIn("<sub>Cliente.idCliente = Pedido.Cliente_idCliente</sub>", html)
 
+    def test_html_coloca_parenteses_em_cada_lado_da_juncao(self) -> None:
+        resultado = _otimizar(_CONSULTA_DUAS_TABELAS)
+
+        html = para_html(resultado.passos[1].arvore)
+        self.assertIn("Pedido.Cliente_idCliente</sub> (<span", html)
+        self.assertIn("(<b>Cliente</b>))", html)
+
     def test_html_escapa_operadores_e_textos(self) -> None:
         resultado = _otimizar(
             "SELECT Cliente.Nome FROM Cliente WHERE Cliente.Nome <> 'Ana';"
