@@ -233,6 +233,18 @@ class TestParserErros(unittest.TestCase):
             "encontrado fim da consulta.",
         )
 
+    def test_virgula_no_from_informa_que_produto_cartesiano_nao_e_suportado(
+        self,
+    ) -> None:
+        with self.assertRaises(ErroSintatico) as contexto:
+            parsear("SELECT Cliente.Nome\nFROM Cliente, Pedido;")
+
+        self.assertEqual(
+            str(contexto.exception),
+            "Erro sintático na linha 2, coluna 13: encontrado ',' após a "
+            "tabela do FROM; produto cartesiano não é suportado, use JOIN ... ON.",
+        )
+
     def test_erros_estruturais_informam_elemento_esperado(self) -> None:
         casos = (
             ("FROM Cliente;", "esperado SELECT"),

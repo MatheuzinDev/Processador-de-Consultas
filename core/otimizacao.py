@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from html import escape
 
 from core.catalogo import CATALOGO, Catalogo
 from core.conversao import AlgebraRelacional
+from core.erros import ErroSemantico
 from core.modelos import (
     Comparacao,
     Condicao,
@@ -15,12 +17,12 @@ from core.modelos import (
 
 
 # Restritividade de uma seleção: quanto menor, mais restritiva.
-_PESO_IGUALDADE_CHAVE = 0
-_PESO_IGUALDADE = 1
-_PESO_INTERVALO = 2
-_PESO_DIFERENCA = 3
-_PESO_ENTRE_COLUNAS = 4
-_PESO_SEM_SELECAO = 5
+_PESO_IGUALDADE_CHAVE = 0  # Igualdade em chave primária: devolve no máximo 1 linha
+_PESO_IGUALDADE = 1  # Igualdade em coluna que não é chave
+_PESO_INTERVALO = 2  # Peso para comparações de intervalo (<, >, <=, >=): devolvem uma faixa de linhas
+_PESO_DIFERENCA = 3  # Peso para diferença (<>): elimina poucas linhas, por isso é pouco restritiva
+_PESO_ENTRE_COLUNAS = 4  # Peso para comparação entre duas colunas da mesma tabela: não dá para estimar
+_PESO_SEM_SELECAO = 5  # Peso para tabela sem filtro nenhum: entra com todas as linhas
 
 _OPERADORES_INTERVALO = frozenset(("<", ">", "<=", ">="))
 
@@ -29,7 +31,7 @@ _OPERADORES_INTERVALO = frozenset(("<", ">", "<=", ">="))
 class NoAlgebra:
     """Nó da árvore de consulta usada pelo otimizador."""
 
-    tipo: str  # Tabela, Filtro, Projecao, Juncao ou Produto
+    tipo: str
     filhos: tuple[NoAlgebra, ...] = ()
     tabela: str | None = None
     condicoes: tuple[Comparacao, ...] = ()
@@ -41,6 +43,7 @@ class PassoOtimizacao:
     heuristica: str
     descricao: str
     expressao: str
+    arvore: NoAlgebra
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,9 +61,9 @@ class _Otimizador:
             *(juncao.tabela for juncao in consulta.juncoes),
         )
         self._condicoes_on = tuple(
-            comparacao
-            for juncao in consulta.juncoes
-            for comparacao in separar_conjuncoes(juncao.condicao)
+            comparacao  
+            for juncao in consulta.juncoes 
+            for comparacao in separar_conjuncoes(juncao.condicao)  
         )
 
         self._condicoes_where = separar_conjuncoes(consulta.condicao)
@@ -81,6 +84,7 @@ class _Otimizador:
     def otimizar(self) -> ResultadoOtimizacao:
         passos = []
 
+        # PASSO 1 - Heurística de junção: árvore inicial, igual à consulta original
         inicial = self._projecao_final(
             self._filtro(
                 self._montar_juncoes(
@@ -94,13 +98,13 @@ class _Otimizador:
         passos.append(
             PassoOtimizacao(
                 "Heurística de junção",
-                "Árvore inicial: as tabelas são combinadas com junções (⨝) "
-                "usando as condições do ON, no lugar de produtos cartesianos. "
-                "A seleção do WHERE e a projeção do SELECT ficam no topo.",
+                self._descrever_juncoes(),
                 para_texto(inicial),
+                inicial,
             )
         )
 
+        # PASSO 2 - Redução de tuplas: cada filtro desce para cima da sua tabela
         folhas_filtradas = self._folhas_com_selecao()
         reducao_tuplas = self._projecao_final(
             self._montar_juncoes(
@@ -114,9 +118,11 @@ class _Otimizador:
                 "Heurística de redução de tuplas",
                 self._descrever_selecoes(),
                 para_texto(reducao_tuplas),
+                reducao_tuplas,
             )
         )
 
+        # PASSO 3 - Redução de atributos: π acima de cada tabela com só as colunas necessárias
         folhas_projetadas, descricao_projecoes = self._folhas_com_projecao(
             folhas_filtradas
         )
@@ -132,9 +138,11 @@ class _Otimizador:
                 "Heurística de redução de atributos",
                 descricao_projecoes,
                 para_texto(reducao_atributos),
+                reducao_atributos,
             )
         )
 
+        # PASSO 4 - Mais restritivas primeiro: reordena as tabelas sem criar produto cartesiano
         ordem = self._ordenar_por_restritividade()
         final = self._projecao_final(
             self._montar_juncoes(
@@ -148,6 +156,7 @@ class _Otimizador:
                 "Heurística de seleções e junções mais restritivas",
                 self._descrever_ordem(ordem),
                 para_texto(final),
+                final,
             )
         )
 
@@ -232,7 +241,7 @@ class _Otimizador:
                     condicoes=tuple(usadas),
                 )
             else:
-                atual = NoAlgebra("Produto", (atual, folhas[tabela]))
+                raise _erro_sem_juncao(tabela)
 
         return atual
 
@@ -281,10 +290,9 @@ class _Otimizador:
                 for tabela in restantes
                 if self._conecta(tabela, set(ordem))
             ]
-            # Sem condição de junção disponível, só restaria o produto
-            # cartesiano; ele é evitado sempre que existir alternativa.
-            candidatas = conectadas or restantes
-            proxima = min(candidatas, key=self._chave_ordenacao)
+            if not conectadas:
+                raise _erro_sem_juncao(restantes[0])
+            proxima = min(conectadas, key=self._chave_ordenacao)
             ordem.append(proxima)
             restantes.remove(proxima)
 
@@ -322,6 +330,18 @@ class _Otimizador:
 
     # Descrições
 
+    def _descrever_juncoes(self) -> str:
+        if len(self._tabelas) == 1:
+            return (
+                "Consulta com uma única tabela: não há junções a montar. "
+                "A seleção do WHERE e a projeção do SELECT ficam no topo."
+            )
+        return (
+            "Árvore inicial: as tabelas são combinadas com junções (⨝) "
+            "usando as condições do ON, no lugar de produtos cartesianos. "
+            "A seleção do WHERE e a projeção do SELECT ficam no topo."
+        )
+
     def _descrever_selecoes(self) -> str:
         movidas = [
             f"σ {formatar_condicoes(tuple(condicoes))} → {tabela}"
@@ -330,6 +350,11 @@ class _Otimizador:
         ]
         if not movidas:
             return "A consulta não tem seleções (WHERE) para antecipar."
+        if len(self._tabelas) == 1:
+            return (
+                "Consulta com uma única tabela: a seleção já fica logo acima "
+                f"da tabela {self._tabelas[0]}, sem junções para antecipar."
+            )
         return (
             "Seleções (σ) do WHERE movidas para logo acima da tabela que "
             "filtram, reduzindo as tuplas antes das junções: "
@@ -338,6 +363,8 @@ class _Otimizador:
         )
 
     def _descrever_ordem(self, ordem: tuple[str, ...]) -> str:
+        if len(ordem) == 1:
+            return "Consulta com uma única tabela: não há folhas para reordenar."
         nomes_pesos = {
             _PESO_IGUALDADE_CHAVE: "igualdade em chave primária",
             _PESO_IGUALDADE: "igualdade",
@@ -350,11 +377,24 @@ class _Otimizador:
             f"{tabela} ({nomes_pesos[self._peso_tabela(tabela)]})"
             for tabela in ordem
         )
+        if ordem == self._tabelas:
+            return (
+                "A ordem original das tabelas já vai da seleção mais restritiva "
+                "para a menos restritiva, sem produto cartesiano; nenhuma "
+                f"reordenação foi necessária: {detalhes}."
+            )
         return (
             "Folhas reordenadas da seleção mais restritiva para a menos "
             "restritiva, sempre juntando uma tabela que tenha condição de "
             f"junção com as anteriores (evita produto cartesiano): {detalhes}."
         )
+
+
+def _erro_sem_juncao(tabela: str) -> ErroSemantico:
+    return ErroSemantico(
+        f"a tabela '{tabela}' não tem condição de junção com as tabelas "
+        "anteriores; produto cartesiano não é suportado, use JOIN ... ON."
+    )
 
 
 def separar_conjuncoes(condicao: Condicao | None) -> tuple[Comparacao, ...]:
@@ -409,9 +449,43 @@ def para_texto(no: NoAlgebra) -> str:
     if no.tipo == "Projecao":
         return f"π_{{{formatar_colunas(no.colunas)}}}({para_texto(no.filhos[0])})"
     esquerda, direita = (para_texto(filho) for filho in no.filhos)
-    if no.tipo == "Juncao":
-        return f"({esquerda} ⨝_{{{formatar_condicoes(no.condicoes)}}} {direita})"
-    return f"({esquerda} × {direita})"
+    return f"({esquerda} ⨝_{{{formatar_condicoes(no.condicoes)}}} {direita})"
+
+
+# Mesmos símbolos e cores da aba "Álgebra Relacional" (AlgebraRelacional.converter_html)
+_HTML_PROJECAO = "<span style='font-size: 20px; color: #bd4a3c;'>π</span>"
+_HTML_SELECAO = "<span style='font-size: 20px; color: #f0b84b;'>σ</span>"
+_HTML_JUNCAO = "<span style='font-size: 20px; color: #d9f45d;'>⨝</span>"
+_HTML_RECUO = "&nbsp;" * 4
+
+
+def para_html(no: NoAlgebra) -> str:
+    """Representa a árvore como expressão de álgebra relacional formatada em HTML."""
+    if no.tipo == "Tabela":
+        return f"<b>{escape(no.tabela)}</b>"
+    if no.tipo in ("Filtro", "Projecao"):
+        filho = no.filhos[0]
+        if no.tipo == "Filtro":
+            cabeca = f"{_HTML_SELECAO} <sub>{escape(formatar_condicoes(no.condicoes))}</sub>"
+        else:
+            cabeca = f"{_HTML_PROJECAO} <sub>{escape(formatar_colunas(no.colunas))}</sub>"
+        if _so_uma_tabela(filho):
+            return f"{cabeca}({para_html(filho)})"
+        recuo = "&nbsp;&nbsp;" if no.tipo == "Filtro" else ""
+        return f"{cabeca}<br>{recuo}({para_html(filho)})"
+    # Como nos slides, cada lado da junção com σ/π fica entre parênteses próprios.
+    esquerda, direita = (
+        f"({para_html(filho)})" if filho.tipo in ("Filtro", "Projecao") else para_html(filho)
+        for filho in no.filhos
+    )
+    operador = f"{_HTML_JUNCAO} <sub>{escape(formatar_condicoes(no.condicoes))}</sub>"
+    return f"({esquerda} <br>{_HTML_RECUO}{operador} {direita})"
+
+
+def _so_uma_tabela(no: NoAlgebra) -> bool:
+    return no.tipo == "Tabela" or (
+        no.tipo in ("Filtro", "Projecao") and _so_uma_tabela(no.filhos[0])
+    )
 
 
 def para_dicionario(no: NoAlgebra) -> dict:
@@ -427,10 +501,8 @@ def para_dicionario(no: NoAlgebra) -> dict:
             label = f"σ\n{formatar_condicoes(atual.condicoes)}"
         elif atual.tipo == "Projecao":
             label = f"π\n{formatar_colunas(atual.colunas)}"
-        elif atual.tipo == "Juncao":
-            label = f"⨝\n{formatar_condicoes(atual.condicoes)}"
         else:
-            label = "×"
+            label = f"⨝\n{formatar_condicoes(atual.condicoes)}"
         return {
             "id": str(contador_id),
             "label": label,
