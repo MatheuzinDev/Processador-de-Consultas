@@ -157,13 +157,16 @@ class TestOtimizacao(unittest.TestCase):
             ["Projecao", "Filtro", "Tabela"],
         )
 
-    def test_omite_projecao_quando_todas_as_colunas_sao_usadas(self) -> None:
+    def test_mantem_projecao_quando_todas_as_colunas_sao_usadas(self) -> None:
         arvore = _otimizar(
             "SELECT Status.Descricao FROM Pedido "
             "JOIN Status ON Pedido.Status_idStatus = Status.idStatus;"
         ).arvore
 
-        self.assertEqual(_ramo_da_tabela(arvore, "Status"), ["Tabela"])
+        self.assertEqual(
+            _ramo_da_tabela(arvore, "Status"),
+            ["Projecao", "Tabela"],
+        )
 
     def test_evita_produto_cartesiano_nos_exemplos(self) -> None:
         for sql, quantidade_tabelas in (

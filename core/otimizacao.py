@@ -191,20 +191,19 @@ class _Otimizador:
         for tabela, folha in folhas.items():
             colunas = self._atributos_necessarios(tabela)
             total = len(self._catalogo.buscar_tabela(tabela).colunas)
+            projetadas[tabela] = NoAlgebra(
+                "Projecao",
+                (folha,),
+                colunas=colunas,
+            )
             if len(colunas) < total:
-                projetadas[tabela] = NoAlgebra(
-                    "Projecao",
-                    (folha,),
-                    colunas=colunas,
-                )
                 reducoes.append(f"{tabela} ({total} → {len(colunas)})")
-            else:
-                projetadas[tabela] = folha
 
         if not reducoes:
             return projetadas, (
-                "Todas as colunas das tabelas são usadas acima delas; "
-                "nenhuma projeção intermediária reduziria atributos."
+                "Projeções (π) explícitas acima de cada tabela; todas as "
+                "colunas necessárias já são usadas, então não há redução "
+                "de atributos."
             )
         return projetadas, (
             "Projeções (π) colocadas logo acima de cada tabela, mantendo só "
